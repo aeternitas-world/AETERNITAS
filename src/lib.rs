@@ -66,16 +66,15 @@ impl Genome {
             Ok(duration) => duration.as_nanos() as u64,
             Err(_) => 42,
         };
-        
+        Self::from_seed(seed)
+    }
+
+    /// Creates a deterministic genome from a seed
+    pub fn from_seed(seed: u64) -> Self {
         let mut rng = Rng::new(seed);
         let mut bytes = [0u8; 64];
 
-        // Fill bytes using the RNG
         for i in 0..64 {
-            // Using the LCG to generate bytes. 
-            // We can grab chunks or just take the high byte of each generation to match previous logic logic
-            // (previous logic: byte = (seed >> 56) as u8)
-            // rng.next_u64() updates state and returns it.
             let r = rng.next_u64();
             bytes[i] = (r >> 56) as u8;
         }
@@ -334,25 +333,35 @@ impl Simulacrum {
 pub struct World {
     pub size: u16,
     pub creatures: Vec<Simulacrum>,
-    pub time: u64,
+    pub tick_count: u64,
+    pub rng: Rng,
+    pub next_id: u64,
 }
 
 impl World {
-    pub fn new(size: u16) -> Self {
+    pub fn new(size: u16, seed: u64) -> Self {
         World {
             size,
             creatures: Vec::new(),
-            time: 0,
+            tick_count: 0,
+            rng: Rng::new(seed),
+            next_id: 1,
         }
     }
 
     /// Calculates the energy available at a specific position based on the current time (weather).
     /// Uses a simple interference pattern: pattern = sin(t*0.01 + x*0.1) * cos(t*0.01 + y*0.1)
+    /// Calculates the energy available at a specific position based on the current time (weather).
     pub fn energy_at(&self, pos: Position) -> f32 {
+        Self::calculate_energy(self.tick_count, pos)
+    }
+
+    /// Static helper for energy calculation to avoid borrow issues
+    pub fn calculate_energy(tick: u64, pos: Position) -> f32 {
         let base_energy = 1.0;
         let variable_energy = 10.0;
         
-        let t_factor = self.time as f32 * 0.01;
+        let t_factor = tick as f32 * 0.01;
         let x_factor = t_factor + (pos.x as f32 * 0.1);
         let y_factor = t_factor + (pos.y as f32 * 0.1);
 
@@ -366,23 +375,105 @@ impl World {
     }
 
     /// Advances the world state by one tick.
-    pub fn tick(&mut self) {
-        // 1. Increment Time
-        self.time += 1;
+    /// Orchestrates the lifecycle: Time -> Feed -> BMR -> Move -> Die -> Reproduce -> Cleanup
+    pub fn tick(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        self.tick_count += 1;
+        
+        // Capture necessary fields to split borrows
+        let world_size = self.size;
+        let current_tick = self.tick_count;
+        let creatures = &mut self.creatures;
+        let rng = &mut self.rng;
+        let next_id_ref = &mut self.next_id;
 
-        // 2. Feed Creatures (Hybrid Photosynthesis)
-        // We calculate gains first to satisfy the borrow checker (cannot borrow self immutable while iterating mutable)
-        let energy_gains: Vec<f32> = self.creatures.iter()
-            .map(|c| self.energy_at(c.pos))
-            .collect();
+        // offspring buffer
+        let mut offspring = Vec::new();
 
-        // 3. Apply Energy Gain and Process Creature Ticks
-        for (creature, gain) in self.creatures.iter_mut().zip(energy_gains) {
-            // Feed
+        // 1. Process existing creatures
+        for creature in creatures.iter_mut() {
+            if !creature.alive { continue; }
+
+            // A. Feed
+            let gain = Self::calculate_energy(current_tick, creature.pos);
             creature.energy += gain;
+
+            // B. Burn BMR and Aging
+            let _tick_res = creature.tick();
+
+            if !creature.alive {
+                events.push(Event { 
+                    timestamp: current_tick, 
+                    entity_id: creature.id, 
+                    event_type: EventType::Death 
+                });
+                continue;
+            }
+
+            // C. Move (Random Walk)
+            let r1 = rng.next_u64();
+            let r2 = rng.next_u64();
             
-            // Burn BMR and update state
-            creature.tick();
+            let dx = (r1 % 3) as i32 - 1;
+            let dy = (r2 % 3) as i32 - 1;
+
+            if dx != 0 || dy != 0 {
+                let target_x = (creature.pos.x as i32 + dx).max(0).min(world_size as i32 - 1) as u16;
+                let target_y = (creature.pos.y as i32 + dy).max(0).min(world_size as i32 - 1) as u16;
+                let target = Position { x: target_x, y: target_y };
+
+                // move_to handles event creation
+                if let Some((_, evt)) = creature.move_to(target, world_size, current_tick) {
+                   events.push(evt);
+                }
+                
+                // Check death after movement cost
+                if creature.energy <= 0.0 {
+                    creature.alive = false;
+                    events.push(Event { 
+                        timestamp: current_tick, 
+                        entity_id: creature.id, 
+                        event_type: EventType::Death 
+                    });
+                    continue;
+                }
+            }
+
+            // D. Reproduction
+            let bmr = Simulacrum::calculate_bmr(&creature.phenotype);
+            let repro_threshold = bmr * 3.0;
+
+            if creature.energy > repro_threshold {
+                creature.energy -= repro_threshold;
+
+                // Self-Crossover (Cloning)
+                let mut child_genome = creature.genome.crossover(&creature.genome, rng);
+                child_genome.mutate(rng);
+                
+                let child_id = *next_id_ref;
+                *next_id_ref += 1;
+
+                let mut child = Simulacrum::new(child_id, child_genome, creature.pos);
+                // Fix: Ensure conservation of energy. Child starts with the energy deducted from parent.
+                // Simulacrum::new defaults to 1000.0, which violates thermodynamics here.
+                child.energy = repro_threshold; 
+
+                events.push(Event {
+                    timestamp: current_tick,
+                    entity_id: child_id,
+                    event_type: EventType::Birth { genome: child_genome },
+                });
+                
+                offspring.push(child);
+            }
         }
+
+        // 2. Cleanup Dead
+        self.creatures.retain(|c| c.alive);
+
+        // 3. Add Offspring
+        self.creatures.append(&mut offspring);
+
+        events
     }
 }

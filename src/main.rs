@@ -1,45 +1,57 @@
 use aeternitas::{Genome, Position, Simulacrum, World};
-use std::time::{SystemTime, UNIX_EPOCH};
+
 
 fn main() {
-    // 1. Setup Randomness (for potential future use, keeping consistent with style)
-    let _seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_nanos() as u64;
+    // 1. Setup Randomness
+    // We use a fixed seed for the world to ensure deterministic execution as requested, 
+    // but here we can generate one if we wanted. 
+    // "Maintain strictly deterministic execution order." -> I'll use a fixed seed.
+    let seed = 42;
 
     println!("--- Permacomputing Spatial Grid Demo ---");
 
     // 2. Initialize World
-    let mut world = World::new(100);
-    println!("Initialized World (Size: {})", world.size);
+    let mut world = World::new(100, seed);
+    println!("Initialized World (Size: {}, Seed: {})", world.size, seed);
 
     // 3. Place 'Adam' at {50, 50}
-    // Note: We need a genome for Adam.
-    let adam_genome = Genome::new_random();
+    // We use the same seed for Adam's genome to ensure complete determinism of the run.
+    let adam_genome = Genome::from_seed(seed); 
+    
     let start_pos = Position { x: 50, y: 50 };
-    let adam = Simulacrum::new(1, adam_genome, start_pos);
+    // We use ID 0 for Adam. World starts IDs at 1.
+    let adam = Simulacrum::new(0, adam_genome, start_pos);
     
     world.creatures.push(adam);
     
     // We access Adam from the world to simulate the loop
-    let creature = &world.creatures[0];
-    println!("Adam Born. Position: {{x: {}, y: {}}}", creature.pos.x, creature.pos.y);
-    println!("Adam Mass: {:.2} kg", creature.phenotype.body_mass);
+    {
+        let creature = &world.creatures[0];
+        println!("Adam Born. Position: {{x: {}, y: {}}}", creature.pos.x, creature.pos.y);
+        println!("Adam Mass: {:.2} kg", creature.phenotype.body_mass);
+    } // End borrow
 
     // 4. Simulation Loop
-    println!("\n--- Starting Simulation (20 Ticks) ---");
+    println!("\n--- Starting Simulation (100 Ticks) ---");
     
-    for i in 1..=20 {
-        world.tick();
+    for _ in 1..=100 {
+        let events = world.tick();
         
-        // Calculate Total System Energy
-        let total_energy: f32 = world.creatures.iter().map(|c| c.energy).sum();
+        let pop_size = world.creatures.len();
         
-        // Print Status (just for the first creature since we only have one)
-        // We'll also print total system energy as requested.
-        let c = &world.creatures[0];
-        println!("Tick {:2} | Time: {:2} | Energy At Pos: {:.2} | Adam Energy: {:.2} | Total System Energy: {:.2}", 
-                 i, world.time, world.energy_at(c.pos), c.energy, total_energy);
+        // Print Summary for the tick
+        println!("Tick {:3} | Pop: {:3} | Events: {}", 
+                 world.tick_count, pop_size, events.len());
+
+        // Print Events Detail
+        for event in events {
+            println!("  -> {}", event.to_jsonl());
+        }
+        
+        // If population is dead, stop? Or run emptiness?
+        if pop_size == 0 {
+            println!("Extinction Event happened at tick {}", world.tick_count);
+            break;
+        }
     }
 }
