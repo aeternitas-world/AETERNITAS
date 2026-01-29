@@ -314,8 +314,8 @@ impl Simulacrum {
 
         let dist = self.pos.dist(&target);
         
-        // Energy Cost Model: Cost = Dist * Mass * 0.01 (Friction/Efficiency)
-        let cost = dist * self.phenotype.body_mass * 0.01;
+        // Energy Cost Model: 0.5 * Mass * Dist^2 * C_drag (0.1)
+        let cost = 0.5 * self.phenotype.body_mass * dist.powi(2) * 0.1;
 
         self.energy -= cost;
         self.pos = target;
