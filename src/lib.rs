@@ -146,3 +146,66 @@ impl Event {
         )
     }
 }
+
+// --- Part 3: The Metabolic State Machine ---
+
+/// Represents the result of a single simulation tick.
+#[derive(Debug, Clone, Copy)]
+pub struct TickResult {
+    pub energy_spent: f32,
+    pub alive: bool,
+}
+
+/// A living entity in the simulation.
+#[derive(Debug)]
+pub struct Simulacrum {
+    pub id: u64,
+    pub genome: Genome,
+    pub phenotype: Phenotype,
+    pub energy: f32, // Joules
+    pub alive: bool,
+}
+
+impl Simulacrum {
+    /// Creates a new creature with a starting energy buffer.
+    pub fn new(id: u64, genome: Genome) -> Self {
+        let phenotype = genome.decode();
+        Simulacrum {
+            id,
+            genome,
+            phenotype,
+            energy: 1000.0, // Starting buffer so it doesn't die instantly
+            alive: true,
+        }
+    }
+
+    /// Calculates the Basal Metabolic Rate (BMR) using a simplified Kleiber's Law.
+    /// Formula: BMR * Mass^0.75
+    pub fn calculate_bmr(phenotype: &Phenotype) -> f32 {
+        phenotype.bmr * phenotype.body_mass.powf(0.75)
+    }
+
+    /// Advances the creature's state by one tick.
+    /// Consumes energy based on BMR. Dies if energy <= 0.
+    pub fn tick(&mut self) -> TickResult {
+        if !self.alive {
+            return TickResult {
+                energy_spent: 0.0,
+                alive: false,
+            };
+        }
+
+        let cost = Self::calculate_bmr(&self.phenotype);
+        self.energy -= cost;
+
+        if self.energy <= 0.0 {
+            self.energy = 0.0;
+            self.alive = false;
+        }
+
+        TickResult {
+            energy_spent: cost,
+            alive: self.alive,
+        }
+    }
+}

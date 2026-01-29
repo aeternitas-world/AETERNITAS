@@ -29,4 +29,39 @@ fn main() {
     // 4. Verify Phenotype (Debug info to stderr)
     let phenotype = adam_genome.decode();
     eprintln!("DEBUG: Adam's Phenotype: {:?}", phenotype);
+
+    // 5. Initialize the Metabolic State Machine (Simulacrum)
+    let mut adam = Simulacrum::new(1, adam_genome);
+    
+    // 6. Run the Simulation Loop
+    // telemetry is printed to stderr to keep stdout clean for JSONL if needed, 
+    // or just printed to stdout as requested. I'll use stderr for "telemetry" text to separate from "events".
+    // Wait, the prompt implies "Print the Telemetry" as a main output. I will use stdout but keys.
+    // Actually, asking to print telemetry suggests this is a simulation run view.
+    // I will use println!
+    
+    println!("\n--- Metabolic Simulation Start ---");
+    println!("Initial Energy: {:.2} J | BMR: {:.2} | Mass: {:.2} kg", 
+             adam.energy, adam.phenotype.bmr, adam.phenotype.body_mass);
+
+    for tick in 1..=10 {
+        let result = adam.tick();
+        
+        let status = if result.alive { "ALIVE" } else { "DEAD" };
+        println!(
+            "Tick {:2} | Energy: {:8.2} J | Cost: {:6.2} J | Status: {}", 
+            tick, adam.energy, result.energy_spent, status
+        );
+        
+        if !result.alive {
+            let death_event = Event {
+                timestamp: now + tick,
+                entity_id: 1,
+                event_type: EventType::Death,
+            };
+            println!("{}", death_event.to_jsonl());
+            break;
+        }
+    }
+    println!("--- Metabolic Simulation End ---");
 }
