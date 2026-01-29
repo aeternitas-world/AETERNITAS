@@ -349,18 +349,20 @@ impl World {
     /// Calculates the energy available at a specific position based on the current time (weather).
     /// Uses a simple interference pattern: pattern = sin(t*0.01 + x*0.1) * cos(t*0.01 + y*0.1)
     pub fn energy_at(&self, pos: Position) -> f32 {
-        let base = 1.0;
+        let base_energy = 1.0;
+        let variable_energy = 10.0;
         
         let t_factor = self.time as f32 * 0.01;
-        let x_factor = pos.x as f32 * 0.1;
-        let y_factor = pos.y as f32 * 0.1;
+        let x_factor = t_factor + (pos.x as f32 * 0.1);
+        let y_factor = t_factor + (pos.y as f32 * 0.1);
 
-        let raw_pattern = (t_factor + x_factor).sin() * (t_factor + y_factor).cos();
+        // Raw pattern: [-1.0, 1.0]
+        let raw = x_factor.sin() * y_factor.cos();
         
-        // Normalize from [-1.0, 1.0] to [0.0, 1.0]
-        let pattern = (raw_pattern + 1.0) / 2.0;
+        // Normalization: [0.0, 1.0]
+        let norm = (raw + 1.0) / 2.0;
 
-        base + (pattern * 10.0)
+        base_energy + (variable_energy * norm)
     }
 
     /// Advances the world state by one tick.
