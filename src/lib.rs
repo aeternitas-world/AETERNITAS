@@ -334,6 +334,7 @@ impl Simulacrum {
 pub struct World {
     pub size: u16,
     pub creatures: Vec<Simulacrum>,
+    pub time: u64,
 }
 
 impl World {
@@ -341,6 +342,45 @@ impl World {
         World {
             size,
             creatures: Vec::new(),
+            time: 0,
+        }
+    }
+
+    /// Calculates the energy available at a specific position based on the current time (weather).
+    /// Uses a simple interference pattern: pattern = sin(t*0.01 + x*0.1) * cos(t*0.01 + y*0.1)
+    pub fn energy_at(&self, pos: Position) -> f32 {
+        let base = 1.0;
+        
+        let t_factor = self.time as f32 * 0.01;
+        let x_factor = pos.x as f32 * 0.1;
+        let y_factor = pos.y as f32 * 0.1;
+
+        let raw_pattern = (t_factor + x_factor).sin() * (t_factor + y_factor).cos();
+        
+        // Normalize from [-1.0, 1.0] to [0.0, 1.0]
+        let pattern = (raw_pattern + 1.0) / 2.0;
+
+        base + (pattern * 10.0)
+    }
+
+    /// Advances the world state by one tick.
+    pub fn tick(&mut self) {
+        // 1. Increment Time
+        self.time += 1;
+
+        // 2. Feed Creatures (Hybrid Photosynthesis)
+        // We calculate gains first to satisfy the borrow checker (cannot borrow self immutable while iterating mutable)
+        let energy_gains: Vec<f32> = self.creatures.iter()
+            .map(|c| self.energy_at(c.pos))
+            .collect();
+
+        // 3. Apply Energy Gain and Process Creature Ticks
+        for (creature, gain) in self.creatures.iter_mut().zip(energy_gains) {
+            // Feed
+            creature.energy += gain;
+            
+            // Burn BMR and update state
+            creature.tick();
         }
     }
 }

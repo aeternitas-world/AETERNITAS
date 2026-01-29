@@ -23,25 +23,23 @@ fn main() {
     world.creatures.push(adam);
     
     // We access Adam from the world to simulate the loop
-    let creature = &mut world.creatures[0];
+    let creature = &world.creatures[0];
     println!("Adam Born. Position: {{x: {}, y: {}}}", creature.pos.x, creature.pos.y);
     println!("Adam Mass: {:.2} kg", creature.phenotype.body_mass);
 
-    // 4. Move to {51, 50}
-    let target_pos = Position { x: 51, y: 50 };
-    let timestamp = 1; // Simulation tick 1
-
-    println!("\n--- Attempting Move ---");
-    match creature.move_to(target_pos, world.size, timestamp) {
-        Some((cost, event)) => {
-            println!("Move Successful.");
-            println!("New Location: {{x: {}, y: {}}}", creature.pos.x, creature.pos.y);
-            println!("Energy Cost: {:.4} J", cost);
-            println!("Remaining Energy: {:.4} J", creature.energy);
-            println!("Log: {}", event.to_jsonl());
-        },
-        None => {
-            println!("Move Failed: Target out of bounds.");
-        }
+    // 4. Simulation Loop
+    println!("\n--- Starting Simulation (20 Ticks) ---");
+    
+    for i in 1..=20 {
+        world.tick();
+        
+        // Calculate Total System Energy
+        let total_energy: f32 = world.creatures.iter().map(|c| c.energy).sum();
+        
+        // Print Status (just for the first creature since we only have one)
+        // We'll also print total system energy as requested.
+        let c = &world.creatures[0];
+        println!("Tick {:2} | Time: {:2} | Energy At Pos: {:.2} | Adam Energy: {:.2} | Total System Energy: {:.2}", 
+                 i, world.time, world.energy_at(c.pos), c.energy, total_energy);
     }
 }
