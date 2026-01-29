@@ -10,6 +10,14 @@ pub struct Genome {
     bytes: [u8; 64],
 }
 
+/// The expressed traits of a creature, derived from its Genome.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Phenotype {
+    pub bmr: f32,               // Metabolic Rate [0.5, 2.0]
+    pub body_mass: f32,         // Mass in kg [1.0, 100.0]
+    pub perception_radius: f32, // Perception range in meters [1.0, 100.0]
+}
+
 impl Genome {
     /// Creates a new random genome using a simple Linear Congruential Generator (LCG).
     /// Uses the current system time as a seed.
@@ -36,6 +44,60 @@ impl Genome {
 
         Genome { bytes }
     }
+
+    /// Decodes the genome into phenotypic traits using Gray Code to Binary conversion.
+    ///
+    /// Mappings:
+    /// - Bits 0-31:   Metabolism (BMR)       => [0.5, 2.0]
+    /// - Bits 32-63:  Morphology (Body Mass) => [1.0, 100.0] kg
+    /// - Bits 128-159: Sensory (Perception)  => [1.0, 100.0] m (Using lower 32 bits of 128-191 block)
+    pub fn decode(&self) -> Phenotype {
+        // Helper to extract u32 from bytes (Little Endian)
+        let get_u32 = |start: usize| -> u32 {
+            let slice: [u8; 4] = self.bytes[start..start + 4]
+                .try_into()
+                .expect("Slice extraction failed");
+            u32::from_le_bytes(slice)
+        };
+
+        // 1. Extract raw integers
+        let raw_bmr = get_u32(0);      // Bits 0-31
+        let raw_mass = get_u32(4);     // Bits 32-63
+        let raw_perception = get_u32(16); // Bits 128-159 (Start of 128-191 block)
+
+        // 2. Gray Decode (converts Gray code to Binary)
+        let bin_bmr = gray_decode(raw_bmr);
+        let bin_mass = gray_decode(raw_mass);
+        let bin_perception = gray_decode(raw_perception);
+
+        // 3. Normalize and Scale
+        // Maps u32 [0, MAX] -> f32 [0.0, 1.0]
+        let normalize = |v: u32| -> f32 {
+            v as f32 / u32::MAX as f32
+        };
+
+        let norm_bmr = normalize(bin_bmr);
+        let norm_mass = normalize(bin_mass);
+        let norm_perception = normalize(bin_perception);
+
+        Phenotype {
+            bmr: norm_bmr * (2.0 - 0.5) + 0.5,
+            body_mass: norm_mass * (100.0 - 1.0) + 1.0,
+            perception_radius: norm_perception * (100.0 - 1.0) + 1.0,
+        }
+    }
+}
+
+/// Converts a 32-bit Reflective Binary Gray Code (RBGC) to a standard binary integer.
+/// 
+/// See: https://en.wikipedia.org/wiki/Gray_code#Converting_to_and_from_Gray_code
+fn gray_decode(mut n: u32) -> u32 {
+    let mut p = n;
+    while p > 0 {
+        p >>= 1;
+        n ^= p;
+    }
+    n
 }
 
 /// Formats the genome as a hexadecimal string.

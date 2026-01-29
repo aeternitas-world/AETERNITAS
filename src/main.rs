@@ -25,4 +25,8 @@ fn main() {
     
     // 3. Print the JSONL log entry to stdout
     println!("{}", adam_birth_event.to_jsonl());
+
+    // 4. Verify Phenotype (Debug info to stderr)
+    let phenotype = adam_genome.decode();
+    eprintln!("DEBUG: Adam's Phenotype: {:?}", phenotype);
 }
