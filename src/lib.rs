@@ -16,6 +16,7 @@ pub struct Phenotype {
     pub bmr: f32,               // Metabolic Rate [0.5, 2.0]
     pub body_mass: f32,         // Mass in kg [1.0, 100.0]
     pub perception_radius: f32, // Perception range in meters [1.0, 100.0]
+    pub max_lifespan: f32,      // Max lifespan in ticks [1000.0, 5000.0]
 }
 
 impl Genome {
@@ -51,6 +52,7 @@ impl Genome {
     /// - Bits 0-31:   Metabolism (BMR)       => [0.5, 2.0]
     /// - Bits 32-63:  Morphology (Body Mass) => [1.0, 100.0] kg
     /// - Bits 128-159: Sensory (Perception)  => [1.0, 100.0] m (Using lower 32 bits of 128-191 block)
+    /// - Bits 272-303: Regulatory (Lifespan) => [1000.0, 5000.0] ticks
     pub fn decode(&self) -> Phenotype {
         // Helper to extract u32 from bytes (Little Endian)
         let get_u32 = |start: usize| -> u32 {
@@ -64,11 +66,13 @@ impl Genome {
         let raw_bmr = get_u32(0);      // Bits 0-31
         let raw_mass = get_u32(4);     // Bits 32-63
         let raw_perception = get_u32(16); // Bits 128-159 (Start of 128-191 block)
+        let raw_lifespan = get_u32(34); // Bits 272-303 (Byte 34-37)
 
         // 2. Gray Decode (converts Gray code to Binary)
         let bin_bmr = gray_decode(raw_bmr);
         let bin_mass = gray_decode(raw_mass);
         let bin_perception = gray_decode(raw_perception);
+        let bin_lifespan = gray_decode(raw_lifespan);
 
         // 3. Normalize and Scale
         // Maps u32 [0, MAX] -> f32 [0.0, 1.0]
@@ -79,11 +83,13 @@ impl Genome {
         let norm_bmr = normalize(bin_bmr);
         let norm_mass = normalize(bin_mass);
         let norm_perception = normalize(bin_perception);
+        let norm_lifespan = normalize(bin_lifespan);
 
         Phenotype {
             bmr: norm_bmr * (2.0 - 0.5) + 0.5,
             body_mass: norm_mass * (100.0 - 1.0) + 1.0,
             perception_radius: norm_perception * (100.0 - 1.0) + 1.0,
+            max_lifespan: norm_lifespan * (5000.0 - 1000.0) + 1000.0,
         }
     }
 }
@@ -154,6 +160,7 @@ impl Event {
 pub struct TickResult {
     pub energy_spent: f32,
     pub alive: bool,
+    pub telomeres: f32,
 }
 
 /// A living entity in the simulation.
@@ -163,6 +170,7 @@ pub struct Simulacrum {
     pub genome: Genome,
     pub phenotype: Phenotype,
     pub energy: f32, // Joules
+    pub telomeres: f32, // Telomere Counter (T_elo)
     pub alive: bool,
 }
 
@@ -175,6 +183,7 @@ impl Simulacrum {
             genome,
             phenotype,
             energy: 1000.0, // Starting buffer so it doesn't die instantly
+            telomeres: phenotype.max_lifespan,
             alive: true,
         }
     }
@@ -192,10 +201,21 @@ impl Simulacrum {
             return TickResult {
                 energy_spent: 0.0,
                 alive: false,
+                telomeres: self.telomeres,
             };
         }
 
-        let cost = Self::calculate_bmr(&self.phenotype);
+        // Decrement Telomeres
+        self.telomeres -= 1.0;
+
+        // Calculate Cost
+        let mut cost = Self::calculate_bmr(&self.phenotype);
+
+        // Apply Senescence Penalty
+        if self.telomeres <= 0.0 {
+            cost *= 1.5;
+        }
+
         self.energy -= cost;
 
         if self.energy <= 0.0 {
@@ -206,6 +226,7 @@ impl Simulacrum {
         TickResult {
             energy_spent: cost,
             alive: self.alive,
+            telomeres: self.telomeres,
         }
     }
 }

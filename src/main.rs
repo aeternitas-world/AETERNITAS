@@ -1,4 +1,4 @@
-use aeternitas::{Event, EventType, Genome};
+use aeternitas::{Event, EventType, Genome, Simulacrum};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
@@ -26,32 +26,48 @@ fn main() {
     // 3. Print the JSONL log entry to stdout
     println!("{}", adam_birth_event.to_jsonl());
 
-    // 4. Verify Phenotype (Debug info to stderr)
+    // 4. Verify Phenotype
     let phenotype = adam_genome.decode();
-    eprintln!("DEBUG: Adam's Phenotype: {:?}", phenotype);
+    println!("DEBUG: Adam's Phenotype: {:?}", phenotype);
 
     // 5. Initialize the Metabolic State Machine (Simulacrum)
     let mut adam = Simulacrum::new(1, adam_genome);
     
     // 6. Run the Simulation Loop
-    // telemetry is printed to stderr to keep stdout clean for JSONL if needed, 
-    // or just printed to stdout as requested. I'll use stderr for "telemetry" text to separate from "events".
-    // Wait, the prompt implies "Print the Telemetry" as a main output. I will use stdout but keys.
-    // Actually, asking to print telemetry suggests this is a simulation run view.
-    // I will use println!
-    
     println!("\n--- Metabolic Simulation Start ---");
-    println!("Initial Energy: {:.2} J | BMR: {:.2} | Mass: {:.2} kg", 
-             adam.energy, adam.phenotype.bmr, adam.phenotype.body_mass);
+    println!("Initial Energy: {:.2} J | BMR: {:.2} | Mass: {:.2} kg | Max Lifespan: {:.1}", 
+             adam.energy, adam.phenotype.bmr, adam.phenotype.body_mass, adam.telomeres);
 
-    for tick in 1..=10 {
+    let mut senescent_reported = false;
+
+    for tick in 1..=2000 {
         let result = adam.tick();
         
-        let status = if result.alive { "ALIVE" } else { "DEAD" };
-        println!(
-            "Tick {:2} | Energy: {:8.2} J | Cost: {:6.2} J | Status: {}", 
-            tick, adam.energy, result.energy_spent, status
-        );
+        let is_senescent = result.telomeres <= 0.0;
+        let mut status_change = false;
+
+        // Check for Senescence entry
+        if is_senescent && !senescent_reported {
+            senescent_reported = true;
+            status_change = true;
+            println!("WARNING: Adam has entered senescence at tick {}!", tick);
+        }
+
+        // Print telemetry if: mod 100 == 0 OR status change OR death
+        if tick % 100 == 0 || status_change || !result.alive {
+            let status_label = if !result.alive {
+                "DEAD"
+            } else if is_senescent {
+                "SENESCENT"
+            } else {
+                "ALIVE"
+            };
+
+            println!(
+                "Tick {:4} | Energy: {:8.2} J | Telo: {:6.1} | Status: {}", 
+                tick, adam.energy, result.telomeres, status_label
+            );
+        }
         
         if !result.alive {
             let death_event = Event {
