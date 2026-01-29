@@ -1,43 +1,47 @@
-use aeternitas::{Genome, Rng};
+use aeternitas::{Genome, Position, Simulacrum, World};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
-    // 1. Setup Randomness
-    let seed = SystemTime::now()
+    // 1. Setup Randomness (for potential future use, keeping consistent with style)
+    let _seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_nanos() as u64;
-    let mut rng = Rng::new(seed);
 
-    println!("--- Sexual Reproduction Demo ---");
+    println!("--- Permacomputing Spatial Grid Demo ---");
 
-    // 2. Create Parents: "Adam" and "Eve"
-    let adam = Genome::new_random();
-    let eve = Genome::new_random();
+    // 2. Initialize World
+    let mut world = World::new(100);
+    println!("Initialized World (Size: {})", world.size);
 
-    println!("Parent A (Adam): {}", adam);
-    println!("Parent B (Eve):  {}", eve);
-
-    // 3. Perform Crossover to create "Cain"
-    let mut cain = adam.crossover(&eve, &mut rng);
+    // 3. Place 'Adam' at {50, 50}
+    // Note: We need a genome for Adam.
+    let adam_genome = Genome::new_random();
+    let start_pos = Position { x: 50, y: 50 };
+    let adam = Simulacrum::new(1, adam_genome, start_pos);
     
-    // Capture pre-mutation state for comparison (optional, but interesting)
-    // println!("Cain (Pre-Mut):  {}", cain);
-
-    // 4. Apply Mutation to "Cain"
-    cain.mutate(&mut rng);
-
-    // 5. Print all three Genomes
-    println!("Child (Cain):    {}", cain);
+    world.creatures.push(adam);
     
-    println!("\n--- Analysis ---");
-    // Verify differentiation
-    if adam.to_string() != eve.to_string() {
-        println!("Parents are unique.");
-    }
-    if cain.to_string() != adam.to_string() && cain.to_string() != eve.to_string() {
-        println!("Child is unique from parents.");
-    } else {
-        println!("Child is identical to one parent (possible due to crossover luck or identical parents).");
+    // We access Adam from the world to simulate the loop
+    let creature = &mut world.creatures[0];
+    println!("Adam Born. Position: {{x: {}, y: {}}}", creature.pos.x, creature.pos.y);
+    println!("Adam Mass: {:.2} kg", creature.phenotype.body_mass);
+
+    // 4. Move to {51, 50}
+    let target_pos = Position { x: 51, y: 50 };
+    let timestamp = 1; // Simulation tick 1
+
+    println!("\n--- Attempting Move ---");
+    match creature.move_to(target_pos, world.size, timestamp) {
+        Some((cost, event)) => {
+            println!("Move Successful.");
+            println!("New Location: {{x: {}, y: {}}}", creature.pos.x, creature.pos.y);
+            println!("Energy Cost: {:.4} J", cost);
+            println!("Remaining Energy: {:.4} J", creature.energy);
+            println!("Log: {}", event.to_jsonl());
+        },
+        None => {
+            println!("Move Failed: Target out of bounds.");
+        }
     }
 }

@@ -43,6 +43,21 @@ pub struct Phenotype {
     pub max_lifespan: f32,      // Max lifespan in ticks [1000.0, 5000.0]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Position {
+    pub x: u16,
+    pub y: u16,
+}
+
+impl Position {
+    /// Calculates Euclidean distance between two positions.
+    pub fn dist(&self, other: &Position) -> f32 {
+        let dx = self.x as f32 - other.x as f32;
+        let dy = self.y as f32 - other.y as f32;
+        (dx * dx + dy * dy).sqrt()
+    }
+}
+
 impl Genome {
     /// Creates a new random genome using a simple Linear Congruential Generator (LCG).
     /// Uses the current system time as a seed.
@@ -181,7 +196,7 @@ pub enum EventType {
     Genesis,
     Birth { genome: Genome },
     Death,
-    Move { x: i32, y: i32 },
+    Move { x: u16, y: u16 },
 }
 
 /// Represents a discrete moment in history.
@@ -226,6 +241,7 @@ pub struct Simulacrum {
     pub id: u64,
     pub genome: Genome,
     pub phenotype: Phenotype,
+    pub pos: Position,
     pub energy: f32, // Joules
     pub telomeres: f32, // Telomere Counter (T_elo)
     pub alive: bool,
@@ -233,12 +249,13 @@ pub struct Simulacrum {
 
 impl Simulacrum {
     /// Creates a new creature with a starting energy buffer.
-    pub fn new(id: u64, genome: Genome) -> Self {
+    pub fn new(id: u64, genome: Genome, start_pos: Position) -> Self {
         let phenotype = genome.decode();
         Simulacrum {
             id,
             genome,
             phenotype,
+            pos: start_pos,
             energy: 1000.0, // Starting buffer so it doesn't die instantly
             telomeres: phenotype.max_lifespan,
             alive: true,
@@ -284,6 +301,46 @@ impl Simulacrum {
             energy_spent: cost,
             alive: self.alive,
             telomeres: self.telomeres,
+        }
+    }
+
+    /// Moves the creature to a target position.
+    /// Consumes energy based on distance and body mass.
+    pub fn move_to(&mut self, target: Position, world_size: u16, timestamp: u64) -> Option<(f32, Event)> {
+        // Check bounds (Closed Grid)
+        if target.x >= world_size || target.y >= world_size {
+            return None;
+        }
+
+        let dist = self.pos.dist(&target);
+        
+        // Energy Cost Model: Cost = Dist * Mass * 0.01 (Friction/Efficiency)
+        let cost = dist * self.phenotype.body_mass * 0.01;
+
+        self.energy -= cost;
+        self.pos = target;
+
+        let event = Event {
+            timestamp,
+            entity_id: self.id,
+            event_type: EventType::Move { x: self.pos.x, y: self.pos.y },
+        };
+
+        Some((cost, event))
+    }
+}
+
+/// The Simulation World State
+pub struct World {
+    pub size: u16,
+    pub creatures: Vec<Simulacrum>,
+}
+
+impl World {
+    pub fn new(size: u16) -> Self {
+        World {
+            size,
+            creatures: Vec::new(),
         }
     }
 }
