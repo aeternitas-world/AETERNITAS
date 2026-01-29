@@ -56,11 +56,11 @@ fn main() {
         // Print telemetry if: mod 100 == 0 OR status change OR death
         if tick % 100 == 0 || status_change || !result.alive {
             let status_label = if !result.alive {
-                "DEAD"
+                "[DEAD]"
             } else if is_senescent {
-                "SENESCENT"
+                "[SENESCENT]"
             } else {
-                "ALIVE"
+                "[ALIVE]"
             };
 
             println!(
