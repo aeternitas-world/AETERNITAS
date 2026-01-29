@@ -3,6 +3,30 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // --- Part 1: The Genome ---
 
+/// Simple Linear Congruential Generator (LCG) for deterministic randomness.
+pub struct Rng {
+    state: u64,
+}
+
+impl Rng {
+    pub fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    pub fn next_u64(&mut self) -> u64 {
+        const A: u64 = 6364136223846793005;
+        const C: u64 = 1442695040888963407;
+        self.state = self.state.wrapping_mul(A).wrapping_add(C);
+        self.state
+    }
+
+    /// Helper for probabilities, returns 0.0..1.0
+    pub fn next_f32(&mut self) -> f32 {
+        // Use high 32 bits for better randomness
+        (self.next_u64() >> 32) as f32 / u32::MAX as f32
+    }
+}
+
 /// Represents a 512-bit (64-byte) genome.
 /// Fixed size structure to ensure predictable memory usage.
 #[derive(Debug, Clone, Copy)]
@@ -22,28 +46,61 @@ pub struct Phenotype {
 impl Genome {
     /// Creates a new random genome using a simple Linear Congruential Generator (LCG).
     /// Uses the current system time as a seed.
-    ///
-    /// Algorithm: x_{n+1} = (a * x_n + c) % m
-    /// We use constants from PCG or similar reliable LCGs, adapted for u64.
     pub fn new_random() -> Self {
-        let mut seed = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        let seed = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(duration) => duration.as_nanos() as u64,
-            Err(_) => 42, // Fallback seed if time fails (unlikely)
+            Err(_) => 42,
         };
-
-        // LCG Constants (from MMIX by Knuth)
-        const A: u64 = 6364136223846793005;
-        const C: u64 = 1442695040888963407;
-
+        
+        let mut rng = Rng::new(seed);
         let mut bytes = [0u8; 64];
 
+        // Fill bytes using the RNG
         for i in 0..64 {
-            seed = seed.wrapping_mul(A).wrapping_add(C);
-            // Use the high bits for better randomness quality in simple LCGs
-            bytes[i] = (seed >> 56) as u8; 
+            // Using the LCG to generate bytes. 
+            // We can grab chunks or just take the high byte of each generation to match previous logic logic
+            // (previous logic: byte = (seed >> 56) as u8)
+            // rng.next_u64() updates state and returns it.
+            let r = rng.next_u64();
+            bytes[i] = (r >> 56) as u8;
         }
 
         Genome { bytes }
+    }
+
+    /// Combines this genome with another using Uniform Crossover.
+    /// 50% chance per bit to inherit from Parent A or B.
+    /// Optimized by processing 64-bit chunks.
+    pub fn crossover(&self, other: &Genome, rng: &mut Rng) -> Genome {
+        let mut child_bytes = [0u8; 64];
+        
+        // Iterate as 64-bit chunks (8 chunks * 8 bytes = 64 bytes)
+        for i in 0..8 {
+            let offset = i * 8;
+            let range = offset..offset+8;
+            
+            let self_chunk = u64::from_ne_bytes(self.bytes[range.clone()].try_into().unwrap());
+            let other_chunk = u64::from_ne_bytes(other.bytes[range.clone()].try_into().unwrap());
+            
+            let mask = rng.next_u64();
+            let child_chunk = (self_chunk & mask) | (other_chunk & !mask);
+            
+            child_bytes[range].copy_from_slice(&child_chunk.to_ne_bytes());
+        }
+        
+        Genome { bytes: child_bytes }
+    }
+
+    /// Applies point mutations to the genome.
+    /// Mutation rate: 0.0001 per bit.
+    pub fn mutate(&mut self, rng: &mut Rng) {
+        for byte in self.bytes.iter_mut() {
+            for bit in 0..8 {
+                if rng.next_f32() < 0.0001 {
+                    *byte ^= 1 << bit;
+                }
+            }
+        }
     }
 
     /// Decodes the genome into phenotypic traits using Gray Code to Binary conversion.

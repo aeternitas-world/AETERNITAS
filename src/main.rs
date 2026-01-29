@@ -1,83 +1,43 @@
-use aeternitas::{Event, EventType, Genome, Simulacrum};
+use aeternitas::{Genome, Rng};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
-    // 1. Instantiate a "Genesis" event
-    let now = SystemTime::now()
+    // 1. Setup Randomness
+    let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_nanos() as u64;
+    let mut rng = Rng::new(seed);
 
-    let genesis_event = Event {
-        timestamp: now,
-        entity_id: 0,
-        event_type: EventType::Genesis,
-    };
-    println!("{}", genesis_event.to_jsonl());
+    println!("--- Sexual Reproduction Demo ---");
 
-    // 2. Create "Adam" creature with a random genome
-    let adam_genome = Genome::new_random();
-    let adam_birth_event = Event {
-        timestamp: now + 1, // 1 tick later
-        entity_id: 1,       // Adam is ID 1
-        event_type: EventType::Birth { genome: adam_genome },
-    };
+    // 2. Create Parents: "Adam" and "Eve"
+    let adam = Genome::new_random();
+    let eve = Genome::new_random();
+
+    println!("Parent A (Adam): {}", adam);
+    println!("Parent B (Eve):  {}", eve);
+
+    // 3. Perform Crossover to create "Cain"
+    let mut cain = adam.crossover(&eve, &mut rng);
     
-    // 3. Print the JSONL log entry to stdout
-    println!("{}", adam_birth_event.to_jsonl());
+    // Capture pre-mutation state for comparison (optional, but interesting)
+    // println!("Cain (Pre-Mut):  {}", cain);
 
-    // 4. Verify Phenotype
-    let phenotype = adam_genome.decode();
-    println!("DEBUG: Adam's Phenotype: {:?}", phenotype);
+    // 4. Apply Mutation to "Cain"
+    cain.mutate(&mut rng);
 
-    // 5. Initialize the Metabolic State Machine (Simulacrum)
-    let mut adam = Simulacrum::new(1, adam_genome);
+    // 5. Print all three Genomes
+    println!("Child (Cain):    {}", cain);
     
-    // 6. Run the Simulation Loop
-    println!("\n--- Metabolic Simulation Start ---");
-    println!("Initial Energy: {:.2} J | BMR: {:.2} | Mass: {:.2} kg | Max Lifespan: {:.1}", 
-             adam.energy, adam.phenotype.bmr, adam.phenotype.body_mass, adam.telomeres);
-
-    let mut senescent_reported = false;
-
-    for tick in 1..=2000 {
-        let result = adam.tick();
-        
-        let is_senescent = result.telomeres <= 0.0;
-        let mut status_change = false;
-
-        // Check for Senescence entry
-        if is_senescent && !senescent_reported {
-            senescent_reported = true;
-            status_change = true;
-            println!("WARNING: Adam has entered senescence at tick {}!", tick);
-        }
-
-        // Print telemetry if: mod 100 == 0 OR status change OR death
-        if tick % 100 == 0 || status_change || !result.alive {
-            let status_label = if !result.alive {
-                "[DEAD]"
-            } else if is_senescent {
-                "[SENESCENT]"
-            } else {
-                "[ALIVE]"
-            };
-
-            println!(
-                "Tick {:4} | Energy: {:8.2} J | Telo: {:6.1} | Status: {}", 
-                tick, adam.energy, result.telomeres, status_label
-            );
-        }
-        
-        if !result.alive {
-            let death_event = Event {
-                timestamp: now + tick,
-                entity_id: 1,
-                event_type: EventType::Death,
-            };
-            println!("{}", death_event.to_jsonl());
-            break;
-        }
+    println!("\n--- Analysis ---");
+    // Verify differentiation
+    if adam.to_string() != eve.to_string() {
+        println!("Parents are unique.");
     }
-    println!("--- Metabolic Simulation End ---");
+    if cain.to_string() != adam.to_string() && cain.to_string() != eve.to_string() {
+        println!("Child is unique from parents.");
+    } else {
+        println!("Child is identical to one parent (possible due to crossover luck or identical parents).");
+    }
 }
